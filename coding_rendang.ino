@@ -7,8 +7,8 @@
 #include "soc/rtc_cntl_reg.h"
 
 //KONFIGURASI
-const char* ssid = "Tester";    
-const char* password = "Anjay123";
+const char* ssid = "IoT Rendang";    
+const char* password = "Depong27";
 const char* mqtt_server = "broker.emqx.io";
 const int mqtt_port = 1883;
 
