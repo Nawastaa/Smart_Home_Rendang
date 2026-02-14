@@ -8,7 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
     <style>
-        /* --- GAYA DASAR --- */
+        /* --- GAYA DASAR (TIDAK BERUBAH) --- */
         body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
         .container { max-width: 480px; margin: 0 auto; padding-bottom: 50px; }
         
@@ -36,14 +36,13 @@
             backdrop-filter: blur(5px);
         }
         
-        /* --- KARTU CCTV --- */
+        /* --- KARTU CCTV (DISEDERHANAKAN) --- */
         .card-cctv {
             background: #1a1a1a; border: 1px solid #333; border-radius: 15px; 
             margin-bottom: 20px; overflow: hidden; color: white; 
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
-        .btn-cctv { border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-cctv:active { transform: scale(0.95); }
+        /* Style input manual & flash dihapus karena sudah tidak dipakai */
 
         /* --- GRID LAMPU --- */
         .section-title { margin-left: 10px; margin-bottom: 15px; color: #555; font-weight: 600; display: flex; align-items: center; gap: 8px; }
@@ -54,7 +53,6 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.03); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             border: 2px solid transparent; display: flex; flex-direction: column; justify-content: space-between;
         }
-        /* State Lampu Nyala */
         .card-lampu.active { border-color: #ffc107; background: #fffdf5; transform: translateY(-3px); box-shadow: 0 8px 20px rgba(255, 193, 7, 0.15); }
         .card-lampu.active .icon-lampu { color: #ffc107; filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.6)); }
 
@@ -96,30 +94,13 @@
                  onload="camOnline()" onerror="camOffline()">
             
             <div id="offline-msg" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #666;">
-                <i class="fas fa-eye-slash" style="font-size: 3rem;"></i><br>
-                <span style="font-size: 0.9rem; margin-top: 10px; display: block;">Kamera Tidak Terhubung</span>
+                <i class="fas fa-circle-notch fa-spin" style="font-size: 3rem; margin-bottom: 10px;"></i><br>
+                <span id="msg-text" style="font-size: 0.9rem; display: block;">Menunggu Sinyal IP...</span>
             </div>
         </div>
 
-        <div style="padding: 15px;">
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <button onclick="toggleFlash(255)" class="btn-cctv" style="flex: 1; background: #f1c40f; color: #000;">
-                    <i class="fas fa-bolt"></i> Flash ON
-                </button>
-                <button onclick="toggleFlash(0)" class="btn-cctv" style="flex: 1; background: #333; color: #fff;">
-                    <i class="far fa-lightbulb"></i> Flash OFF
-                </button>
-            </div>
-            <div style="background: #252525; padding: 10px; border-radius: 8px;">
-                <label style="font-size: 0.8rem; color: #aaa;">IP Kamera (Ganti jika error):</label>
-                <div style="display: flex; gap: 5px; margin-top: 5px;">
-                    <input type="text" id="ip-input" value="" 
-                           style="flex: 1; background: #333; border: none; color: white; padding: 8px; border-radius: 4px;">
-                    <button onclick="updateIP()" style="background: #2ecc71; border: none; color: white; padding: 0 15px; border-radius: 4px; cursor: pointer;">
-                        <i class="fas fa-sync"></i>
-                    </button>
-                </div>
-            </div>
+        <div style="padding: 10px; background: #252525; text-align: center;">
+             <small style="color: #aaa;">Connected IP:</small> <span id="ip-display" style="color: #2ecc71; font-family: monospace;">--.--.--.--</span>
         </div>
     </div>
     
@@ -180,29 +161,32 @@
 </div>
 
 <script>
-    // --- 1. KONFIGURASI CCTV ---
-    // Ganti ini dengan IP Static yang tadi kita buat
-    let currentIP = "10.218.135.198"; 
+    // --- 1. KONFIGURASI MQTT ---
+    const broker = "broker.emqx.io";
+    const port = 8084; // SSL Port
+    const clientID = "WebKSL-" + parseInt(Math.random() * 100000);
+    const topicBase = "proyekiot/lampu/"; 
+    let statusLampu = { teras: 0, tamu: 0, tidur: 0, dapur: 0 };
+    let currentIP = ""; // Awalnya kosong, nunggu MQTT
 
-    // Init Awal CCTV
-    document.getElementById('ip-input').value = currentIP;
-    updateStreamSource();
+    const client = new Paho.MQTT.Client(broker, port, clientID);
 
-    function updateIP() {
-        currentIP = document.getElementById('ip-input').value;
-        updateStreamSource();
-        alert("IP Kamera diupdate ke: " + currentIP);
-    }
-
-    function updateStreamSource() {
+    // --- LOGIKA IP KAMERA DINAMIS (Baru) ---
+    function updateStreamSource(ip) {
+        if (!ip) return;
+        currentIP = ip;
         const img = document.getElementById('stream-view');
+        const displayIP = document.getElementById('ip-display');
+        const msgText = document.getElementById('msg-text');
+        
+        // Update URL Video
         img.src = `http://${currentIP}:81/stream`;
-    }
-
-    function toggleFlash(val) {
-        fetch(`http://${currentIP}/control?var=led_intensity&val=${val}`, { mode: 'no-cors' })
-        .then(() => console.log("Flash: " + val))
-        .catch(err => console.log("Gagal kirim ke kamera"));
+        
+        // Update Text di UI
+        displayIP.innerText = currentIP;
+        msgText.innerText = "Mencoba menghubungkan...";
+        
+        console.log("Stream updated to IP: " + currentIP);
     }
 
     function camOnline() {
@@ -217,25 +201,27 @@
         document.getElementById('offline-msg').style.display = 'block';
         const st = document.getElementById('status-cam');
         st.innerText = "OFFLINE"; st.style.background = "#e74c3c";
+        
+        // Kalau offline, kembalikan pesan
+        document.getElementById('msg-text').innerText = (currentIP === "") ? "Menunggu Sinyal IP..." : "Kamera Tidak Terjangkau";
     }
 
-    // --- 2. KONFIGURASI MQTT ---
-    const broker = "broker.emqx.io";
-    const port = 8084; // SSL Port
-    const topicBase = "proyekiot/lampu/"; 
-    const clientID = "WebKSL-" + parseInt(Math.random() * 100000);
-    let statusLampu = { teras: 0, tamu: 0, tidur: 0, dapur: 0 };
-
-    const client = new Paho.MQTT.Client(broker, port, clientID);
-
+    // --- MQTT HANDLER ---
     client.onConnectionLost = function(responseObject) {
         console.log("Koneksi Putus: " + responseObject.errorMessage);
         updateStatus("OFFLINE", "red");
     };
 
     client.onMessageArrived = function(message) {
+        // 1. Cek Topik Suhu
         if (message.destinationName === "proyekiot/sensor/suhu") {
             document.getElementById("suhu").innerText = message.payloadString;
+        } 
+        // 2. Cek Topik IP Kamera (FITUR BARU)
+        else if (message.destinationName === "proyekiot/ipcam") {
+            const newIP = message.payloadString;
+            console.log("IP Baru diterima dari MQTT: " + newIP);
+            updateStreamSource(newIP);
         }
     };
 
@@ -246,7 +232,10 @@
         onSuccess: function() {
             console.log("MQTT Terhubung!");
             updateStatus("ONLINE", "#a3ffac");
+            
+            // Subscribe ke topik Suhu & IP Cam
             client.subscribe("proyekiot/sensor/suhu");
+            client.subscribe("proyekiot/ipcam"); // <-- Ini yang bikin IP otomatis
         },
         onFailure: function(e) {
             console.log("Gagal Konek: ", e);
@@ -254,7 +243,7 @@
         }
     });
 
-    // --- LOGIKA KONTROL UI ---
+    // --- LOGIKA KONTROL UI (LAMPU & GERBANG) ---
     function updateStatus(teks, warna) {
         const el = document.getElementById("conn-status");
         el.innerText = teks; el.style.color = warna;
@@ -300,6 +289,7 @@
         if (client.isConnected()) {
             let message = new Paho.MQTT.Message(pesan);
             message.destinationName = topik;
+            message.retained = true; // Retain: Biar status tersimpan di server
             client.send(message);
         } else {
             alert("Koneksi Server Terputus! Coba Refresh.");
